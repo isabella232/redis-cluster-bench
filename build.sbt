@@ -10,7 +10,8 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka"     %% "akka-slf4j"     % "2.4.12",
   "io.dropwizard.metrics" % "metrics-core"    % "3.1.2",
   "com.github.scopt"      %% "scopt"          % "3.4.0",
-  "com.github.etaty"      %% "rediscala"      % "1.8.0",
   "org.slf4j"             % "slf4j-log4j12"   % "1.7.7",
-  "log4j"                 % "log4j"           % "1.2.17"
+  "log4j"                 % "log4j"           % "1.2.17",
+  "com.whitepages"        %% "token-bucket"   % "3.0.0",
+  "redis.clients"         % "jedis"           % "2.9.0"
 )
