@@ -69,6 +69,7 @@ object Benchmark extends App {
     config => {
       implicit val system = ActorSystem("redis-benchmark")
       implicit val materializer = ActorMaterializer()
+      val bufferSize = (config.requests / 10) max 1000
 
       val keySource: () => Iterator[String] = () => config.keySource.toLowerCase match {
         case "sequential" =>
@@ -84,8 +85,11 @@ object Benchmark extends App {
       }
       try {
         val client: SimpleRedisClient[String,String] = config.clientType match {
-          case "jediscluster" => RedisScalaClusterClient(config.connectString)
+          case "jediscluster" => JedisClusterClient(config.connectString)
+          case "lettucecluster" => LettuceClusterClient(config.connectString)
+          case "redissoncluster" => RedissonClusterClient(config.connectString)
         }
+
         config.mode match {
 
           case "fill" => {
@@ -102,9 +106,9 @@ object Benchmark extends App {
 
             val source =
               Source.fromIterator(data)
-                .buffer(config.clients, OverflowStrategy.backpressure)
+                .buffer(bufferSize, OverflowStrategy.backpressure)
             val job =
-              if (config.bulk <= 0)
+              if (config.bulk <= 1)
                 source
                   .via(client.setFlow(config.clients))
                   .via(Flows.rateLimit[Boolean](config.rateLimit))
@@ -130,10 +134,10 @@ object Benchmark extends App {
             val misses = new Meter()
 
             val source = Source.fromIterator(keySource)
-              .buffer(config.clients, OverflowStrategy.backpressure)
+              .buffer(bufferSize, OverflowStrategy.backpressure)
             
             val job =
-              if (config.bulk <= 0)
+              if (config.bulk <= 1)
                 source
                   .via(client.getFlow(config.clients))
                   .via(Flows.rateLimit[Option[String]](config.rateLimit))
@@ -153,7 +157,7 @@ object Benchmark extends App {
             println(s"Misses: ${misses.getCount}")
             if (duration.toSeconds > 0) println(s"Rate: ${(hits.getCount + misses.getCount) / duration.toSeconds}")
             println(s"Done in ${duration.toUnit(TimeUnit.SECONDS)} seconds")
-
+            client.shutdown
           }
         }
       }

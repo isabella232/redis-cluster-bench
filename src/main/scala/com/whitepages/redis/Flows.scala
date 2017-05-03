@@ -8,7 +8,6 @@ import akka.stream.scaladsl.{Flow, Sink}
 import akka.util.ByteString
 import com.codahale.metrics.Meter
 import com.whitepages.tokenbucket.BucketBuilder
-import redis.clients.jedis.{HostAndPort, JedisCluster}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -16,51 +15,6 @@ import scala.collection.JavaConverters._
 import scala.util.Random
 import scala.concurrent.ExecutionContext.Implicits.global
 
-trait SimpleRedisClient[K,V] {
-  def get(key: K): Future[Option[V]]
-  def set(key: K, value: V): Future[Boolean]
-  def mget(keys: Seq[K]): Future[Seq[Option[V]]]
-  def mset(pairs: Map[K, V]): Future[Boolean]
-
-  def getFlow(concurrency: Int): Flow[K, Option[V], NotUsed] =
-    Flow[K].mapAsyncUnordered(concurrency)(entry => {
-      get(entry)
-    })
-  def setFlow(concurrency: Int): Flow[(K, V), Boolean, NotUsed] =
-    Flow[(K, V)].mapAsyncUnordered(concurrency)(entry => {
-      set(entry._1, entry._2)
-    })
-  def mgetFlow(concurrency: Int): Flow[Seq[K], Seq[Option[V]], NotUsed] =
-    Flow[Seq[K]].mapAsyncUnordered(concurrency)(entry => {
-      mget(entry)
-    })
-  def msetFlow(concurrency: Int): Flow[Map[K,V], Boolean, NotUsed] =
-    Flow[Map[K,V]].mapAsyncUnordered(concurrency)(entry => {
-      mset(entry)
-    })
-}
-
-case class RedisScalaClusterClient(connectStr: String) extends SimpleRedisClient[String, String] {
-
-  val initialHosts = connectStr.split(""",\s*""").map(_.split(":")).map(node => new HostAndPort(node(0), node(1).toInt)).toSet
-  val clusterClient = new JedisCluster(initialHosts.asJava)
-
-  override def get(key: String): Future[Option[String]] =
-    Future{ Option(clusterClient.get(key)) }
-
-  override def set(key: String, value: String): Future[Boolean] =
-    Future{ Option(clusterClient.set(key, value)).getOrElse("") == "OK" }
-
-  override def mget(keys: Seq[String]): Future[Seq[Option[String]]] =
-    Future { clusterClient.mget(keys:_*).asScala.map(Option(_)) }
-
-  override def mset(pairs: Map[String, String]): Future[Boolean] = {
-    val keyValues = pairs.toList.flatMap { case (k, v) => List(k, v) }
-    Future {
-      clusterClient.mset(keyValues:_*) == "OK"
-    }
-  }
-}
 
 object Flows {
 
@@ -123,7 +77,7 @@ object Flows {
         Some(BucketBuilder.strict((1.0/rate).seconds, 1))
       else
         None
-    Flow[T].mapAsync(1)( x => {
+    Flow[T].mapAsyncUnordered(1)( x => {
       rateLimiter.map( limiter => {
         limiter.tokenF(1).map(_ => x)
       }).getOrElse(Future.successful(x))
